@@ -31,3 +31,9 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.5",
 ]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection style requires calling Depends(...) as an
+# argument default (`session: AsyncSession = Depends(get_session)`) — that's
+# the documented, correct pattern, not the mistake rule B008 usually catches.
+extend-immutable-calls = ["fastapi.Depends"]
