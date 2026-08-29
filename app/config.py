@@ -2,6 +2,7 @@
 # Right now that's just the database address, read from an environment variable
 # (a value set outside the code, e.g. by Railway or your .env file) called DATABASE_URL.
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,19 @@ class Settings(BaseSettings):
     # Settings() below crashes immediately with a clear error, instead of the
     # app starting fine and only failing later when it actually needs the DB.
     database_url: str
+
+    @field_validator("database_url")
+    @classmethod
+    def use_async_driver(cls, v: str) -> str:
+        # Hosting platforms (Railway, Heroku, etc.) hand out a generic
+        # "postgresql://" URL. Without a driver name in the scheme,
+        # SQLAlchemy defaults to a synchronous driver we never installed
+        # (we only installed the async one, asyncpg). Rewrite it here so the
+        # app works no matter which format the platform happens to give us.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix) and "+asyncpg" not in v:
+                return "postgresql+asyncpg://" + v[len(prefix) :]
+        return v
 
 
 # Created once, at import time, so every other file can just do
