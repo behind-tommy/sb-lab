@@ -16,12 +16,10 @@ dependencies = [
     "uvicorn[standard]>=0.52.4",
 ]
 
-[project.scripts]
-sb-lab = "sb_lab:main"
-
-[build-system]
-requires = ["uv_build>=0.12.7,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv]
+# This is a deployable app, not a distributable library — don't try to
+# build/install "sb-lab" itself as a package, just install its dependencies.
+package = false
 
 [dependency-groups]
 dev = [
