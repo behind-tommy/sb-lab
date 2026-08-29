@@ -14,10 +14,11 @@ from app.config import settings
 # "break it" exercise, to demonstrate pool exhaustion under concurrent load.
 # max_overflow=0 stops SQLAlchemy from quietly opening extra temporary
 # connections beyond pool_size, which would hide the effect we're showing.
-# pool_timeout=3 makes a starved request fail fast (3s) instead of hanging
-# for SQLAlchemy's 30s default.
+# pool_timeout=0.01 makes a starved request fail almost instantly (10ms)
+# instead of hanging for SQLAlchemy's 30s default — deliberately extreme so
+# the exhaustion actually shows up even though real queries here are fast.
 engine = create_async_engine(
-    settings.database_url, pool_size=1, max_overflow=0, pool_timeout=3
+    settings.database_url, pool_size=1, max_overflow=0, pool_timeout=0.01
 )
 
 # A factory for creating a "session" (a single conversation with the
