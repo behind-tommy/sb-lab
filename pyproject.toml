@@ -30,6 +30,11 @@ dev = [
     "ruff>=0.16.5",
 ]
 
+[tool.pytest.ini_options]
+# The app isn't installed as a package (see [tool.uv] above), so pytest
+# can't find `app.main` unless we tell it to look in the project root.
+pythonpath = ["."]
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection style requires calling Depends(...) as an
 # argument default (`session: AsyncSession = Depends(get_session)`) — that's
