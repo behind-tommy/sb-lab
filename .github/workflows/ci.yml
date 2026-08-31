@@ -1,0 +1,25 @@
+# .github/workflows/ci.yml — every push and PR: install, lint, type-check, test against a throwaway Postgres
+name: CI
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: test, POSTGRES_DB: test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run mypy .
+      - run: uv run pytest -q
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test
+      # T3 adds:
+      # - run: uv run pip-audit
+      # - run: uv run python -m evals.run --min-score 0.9   # AI overlay
