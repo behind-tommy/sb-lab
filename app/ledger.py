@@ -43,23 +43,7 @@ async def charge(
         amount_cents=amount_cents,
         idempotency_key=idempotency_key,
     )
-    session.add(entry)
-    try:
-        await session.commit()
-    except IntegrityError:
-        # Someone already used this exact idempotency key. Postgres's
-        # unique constraint is what actually caught this — not a
-        # check-then-insert in Python, which could race under concurrent
-        # requests. Roll back the failed attempt, then look up what
-        # happened last time and report that instead.
-        await session.rollback()
-        existing = await _get_by_idempotency_key(session, idempotency_key)
-        assert existing is not None
-        return LedgerResult(
-            entry_id=existing.id, amount_cents=existing.amount_cents, duplicate=True
-        )
-
-    return LedgerResult(entry_id=entry.id, amount_cents=entry.amount_cents, duplicate=False)
+    return await _commit_or_get_existing(session, entry, idempotency_key)
 
 
 # Records a refund against a specific charge. Refuses if this refund, added
@@ -98,18 +82,7 @@ async def refund(
         idempotency_key=idempotency_key,
         charge_id=charge_id,
     )
-    session.add(entry)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        existing = await _get_by_idempotency_key(session, idempotency_key)
-        assert existing is not None
-        return LedgerResult(
-            entry_id=existing.id, amount_cents=existing.amount_cents, duplicate=True
-        )
-
-    return LedgerResult(entry_id=entry.id, amount_cents=entry.amount_cents, duplicate=False)
+    return await _commit_or_get_existing(session, entry, idempotency_key)
 
 
 # The account's current balance: every charge lowers it, every refund
@@ -124,6 +97,32 @@ async def get_balance(session: AsyncSession, account_id: str) -> int:
     for entry in result.scalars():
         total += entry.amount_cents if entry.kind == "refund" else -entry.amount_cents
     return total
+
+
+# Shared by charge() and refund(): stage one entry, try to save it, and
+# handle a duplicate idempotency key correctly. IMPORTANT: an IntegrityError
+# here could mean "duplicate key" (expected, handle it) OR something else
+# entirely — e.g. the CHECK constraint on amount_cents > 0 — so we don't
+# just assume it's a duplicate. We look up whether a row with this key
+# genuinely exists; only then do we call it a duplicate. If it doesn't
+# exist, something else caused the failure, and the caller needs to see
+# the real error, not a confusing crash pretending it was a duplicate.
+async def _commit_or_get_existing(
+    session: AsyncSession, entry: LedgerEntry, idempotency_key: str
+) -> LedgerResult:
+    session.add(entry)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await _get_by_idempotency_key(session, idempotency_key)
+        if existing is None:
+            raise
+        return LedgerResult(
+            entry_id=existing.id, amount_cents=existing.amount_cents, duplicate=True
+        )
+
+    return LedgerResult(entry_id=entry.id, amount_cents=entry.amount_cents, duplicate=False)
 
 
 async def _get_by_idempotency_key(

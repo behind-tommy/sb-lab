@@ -9,7 +9,7 @@
 
 import os
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 
 import pytest
 import pytest_asyncio
@@ -25,7 +25,13 @@ from app.config import settings
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def make_session() -> AsyncGenerator[Callable[[], AsyncSession], None]:
+    # Hands out however many independent sessions a test needs, all backed
+    # by the same connection pool. A single session isn't safe to use from
+    # two operations happening at once — this is what the concurrency test
+    # needs: two genuinely separate sessions racing each other, the way two
+    # separate real requests would each get their own.
+    #
     # Built fresh inside the fixture (not at module import time) so it's
     # always created within the current test's event loop — pytest-asyncio
     # gives each test its own loop, and an asyncpg connection created under
@@ -33,7 +39,15 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # is in progress" error you get if you build this at module scope).
     engine = create_async_engine(settings.database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
+    yield session_factory
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(
+    make_session: Callable[[], AsyncSession],
+) -> AsyncGenerator[AsyncSession, None]:
+    async with make_session() as session:
         # Unlike CI's Postgres service container (thrown away after every
         # run), a local database persists between test runs. Without this,
         # a hardcoded idempotency key from a previous run (e.g. "charge-1")
@@ -42,7 +56,6 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await session.execute(text("DELETE FROM ledger_entries"))
         await session.commit()
         yield session
-    await engine.dispose()
 
 
 @pytest.fixture
