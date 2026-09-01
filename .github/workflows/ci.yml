@@ -17,6 +17,13 @@ jobs:
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run mypy .
+      # The Postgres service above starts completely empty every run - the
+      # schema only exists once these migrations actually create it. Skip
+      # this and every test touching the database fails with "relation ...
+      # does not exist", not a code bug.
+      - run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test
       - run: uv run pytest -q
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test

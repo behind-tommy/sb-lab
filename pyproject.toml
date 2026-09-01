@@ -34,6 +34,9 @@ dev = [
 # The app isn't installed as a package (see [tool.uv] above), so pytest
 # can't find `app.main` unless we tell it to look in the project root.
 pythonpath = ["."]
+# Lets test functions just be `async def test_...` without needing an
+# `@pytest.mark.asyncio` decorator on every single one.
+asyncio_mode = "auto"
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection style requires calling Depends(...) as an

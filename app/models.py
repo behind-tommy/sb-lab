@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -33,4 +33,49 @@ class Note(Base):
     # Python, so it can't be forgotten or set to the wrong clock.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# One row per money movement on an account: either a "charge" (money taken)
+# or a "refund" (money given back). We never update a row after it's
+# written — the account's balance is always recomputed from the full list
+# of entries, so there's one source of truth instead of a balance number
+# that could drift out of sync with what actually happened.
+class LedgerEntry(Base):
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Which account this money movement belongs to.
+    account_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    # "charge" or "refund" — which direction the money moved.
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Always positive. A refund's direction comes from `kind`, not from a
+    # negative number — negative amounts would let a bug (or a bad actor)
+    # sneak a balance-increasing "charge" past validation meant for charges.
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # The caller-supplied "don't do this twice" tag (see docs/specs/ledger.md).
+    # unique=True is what makes idempotency airtight: Postgres itself refuses
+    # a second row with the same key, even under concurrent requests — we
+    # don't have to trust application code to check-then-insert safely.
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+    # Only set on refund rows: which charge this refund is against. Lets us
+    # ask "how much of this specific charge has already been refunded?"
+    charge_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ledger_entries.id"), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_ledger_entries_amount_positive"),
+        CheckConstraint(
+            "kind IN ('charge', 'refund')", name="ck_ledger_entries_kind_valid"
+        ),
     )
